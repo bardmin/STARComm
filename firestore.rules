@@ -1,0 +1,305 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Deny all reads and writes by default for all paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // Allow a user to read their own document
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Disallow client-side creation of user documents
+      // Server (using Admin SDK) handles user document creation during registration.
+      allow create: if false;
+
+      // Allow a user to update their own document
+      // Add specific field validation to prevent users from changing critical/immutable fields.
+      allow update: if request.auth != null && request.auth.uid == userId
+                    // User cannot change their own email directly through this rule (email updates might need a special process)
+                    && request.resource.data.email == resource.data.email
+                    // User cannot change their own role
+                    && request.resource.data.role == resource.data.role
+                    // User cannot change their own userType
+                    && request.resource.data.userType == resource.data.userType
+                    // User cannot change their own userId (which should be the doc ID / uid)
+                    && request.resource.data.userId == resource.data.userId
+                    // User cannot modify their verification status directly
+                    && request.resource.data.isVerified == resource.data.isVerified
+                    // User cannot modify their active status directly
+                    && request.resource.data.isActive == resource.data.isActive
+                    // User cannot modify their own creation timestamp
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    // Ensure required fields are not removed (example for firstName)
+                    && request.resource.data.firstName is string && request.resource.data.firstName.size() > 0
+                    && request.resource.data.lastName is string && request.resource.data.lastName.size() > 0;
+                    // Add more validations as needed:
+                    // e.g., request.resource.data.phoneNumber is string
+                    // e.g., request.resource.data.profileImageUrl is string || request.resource.data.profileImageUrl == null
+
+      // Disallow client-side deletion of user documents
+      // Deletion should behandled by a backend process if needed.
+      allow delete: if false;
+    }
+
+    // Rules for the 'serviceCategories' collection
+    match /serviceCategories/{categoryId} {
+      // Allow all authenticated users to read service categories
+      allow read: if request.auth != null;
+
+      // Disallow client-side writes to service categories
+      // Category management should be done via backend admin functions.
+      allow write: if false; // Create, update, delete
+    }
+
+    // Rules for the 'services' collection
+    match /services/{serviceId} {
+      // Allow anyone to read services (active or not, filtering done by server)
+      // For MVP, public readability is fine. Can be restricted further if needed.
+      allow read: if true;
+
+      // Client-side creation is disallowed. Server (Admin SDK) handles service creation.
+      allow create: if false;
+
+      // Allow the service provider who owns the service to update it.
+      // Server-side logic will enforce which fields can be updated.
+      allow update: if request.auth != null
+                    && request.auth.uid == resource.data.serviceProviderId // serviceProviderId from existing doc
+                    // Prevent changing the serviceProviderId or createdAt
+                    && request.resource.data.serviceProviderId == resource.data.serviceProviderId
+                    && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Allow the service provider who owns the service to delete it.
+      // Actual deletion logic (soft/hard) is handled server-side.
+      // If soft delete (setting isActive=false), it's an 'update' operation.
+      // This rule is for actual document deletion if allowed from client (generally not recommended).
+      // For now, let's assume server handles deletion, so client cannot delete directly.
+      allow delete: if false;
+      // If client-side soft delete is desired (via update rule):
+      // It would be part of the 'update' rule:
+      // e.g. allow update: if request.auth != null && request.auth.uid == resource.data.serviceProviderId && (request.resource.data.isActive == false || allOtherEditableFieldsAreValid);
+    }
+
+    // Rules for the 'tokenWallets' collection
+    match /tokenWallets/{userId} {
+      // Allow a user to read their own wallet
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Disallow all client-side writes to wallets.
+      // Wallet balances are updated by server-side logic using Admin SDK via transactions.
+      allow write: if false;
+    }
+
+    // Rules for the 'tokenTransactions' collection
+    match /tokenTransactions/{transactionId} {
+      // Allow a user to read their own transactions.
+      // This requires transactions to have a 'userId' field matching request.auth.uid.
+      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
+
+      // Disallow all client-side writes.
+      // Transactions are created by server-side logic.
+      allow write: if false;
+    }
+
+    // Rules for the 'bookings' collection
+    match /bookings/{bookingId} {
+      // Allow read by the resident or service provider involved in the booking, or an admin
+      allow read: if request.auth != null &&
+                    (request.auth.uid == resource.data.residentId ||
+                     request.auth.uid == resource.data.serviceProviderId ||
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+
+      // Allow creation by an authenticated user (resident)
+      // Server-side validation is more comprehensive.
+      allow create: if request.auth != null &&
+                      request.auth.uid == request.resource.data.residentId &&
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.serviceProviderId is string &&
+                      request.resource.data.serviceId is string &&
+                      request.resource.data.totalTokens is number && request.resource.data.totalTokens > 0 &&
+                      request.resource.data.scheduledDate is timestamp;
+                      // Ensure other required fields are present if making them client-writable on create
+                      // e.g. request.resource.data.scheduledTime is string
+
+      // Allow updates by resident or service provider involved, or admin
+      // Server is the primary enforcer of valid status transitions & business logic.
+      allow update: if request.auth != null &&
+                      (
+                        request.auth.uid == resource.data.residentId ||
+                        request.auth.uid == resource.data.serviceProviderId ||
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+                      ) &&
+                      // Prevent changing key immutable fields after creation
+                      request.resource.data.residentId == resource.data.residentId &&
+                      request.resource.data.serviceProviderId == resource.data.serviceProviderId &&
+                      request.resource.data.serviceId == resource.data.serviceId &&
+                      request.resource.data.totalTokens == resource.data.totalTokens &&
+                      request.resource.data.createdAt == resource.data.createdAt;
+                      // Further granular checks on status transitions can be added but get complex.
+                      // Example: only allow resident to change status to 'cancelled' if current status is 'pending'
+                      // (request.auth.uid == resource.data.residentId && request.resource.data.status == 'cancelled' && resource.data.status == 'pending')
+
+      // Disallow client-side deletion. Cancellations are status updates.
+      allow delete: if false;
+    }
+
+    // Rules for the 'reviews' collection
+    match /reviews/{reviewId} {
+      // Allow public read access to reviews if they are marked as public
+      // Or allow read by involved parties even if not public (e.g. for moderation)
+      allow read: if resource.data.isPublic == true ||
+                    (request.auth != null &&
+                      (request.auth.uid == resource.data.reviewerId ||
+                       request.auth.uid == resource.data.revieweeId ||
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+                    );
+
+      // Allow creation by an authenticated user if:
+      // - They are the reviewerId specified in the document.
+      // - Key fields are present and have correct types/values.
+      // - Server-side will do more checks (e.g., booking completed, user is participant).
+      allow create: if request.auth != null &&
+                      request.auth.uid == request.resource.data.reviewerId &&
+                      request.resource.data.bookingId is string && request.resource.data.bookingId.size() > 0 &&
+                      request.resource.data.revieweeId is string && request.resource.data.revieweeId.size() > 0 &&
+                      request.resource.data.rating is number &&
+                      request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+                      request.resource.data.comment is string && request.resource.data.comment.size() > 0 &&
+                      // Ensure createdAt is set by server (or use request.time)
+                      request.resource.data.createdAt == request.time && // Enforce client to set it to request.time
+                      request.resource.data.isPublic == true; // New reviews are public by default
+
+      // Disallow client-side updates and deletions.
+      // These could be admin/moderator functions handled server-side.
+      allow update: if false; // Could allow owner to update comment within a time window if needed.
+      allow delete: if false;
+    }
+
+    // Rules for the 'starProjects' collection
+    match /starProjects/{projectId} {
+      // Allow public read access to all projects
+      allow read: if true;
+
+      // Allow creation by any authenticated user if:
+      // - They are the creatorId specified in the document.
+      // - Initial currentAmount must be 0.
+      // - Initial status is 'active' or 'draft'.
+      // - Required fields are present and valid.
+      // - Server is primary validator; these are client-side guards.
+      allow create: if request.auth != null &&
+                      request.auth.uid == request.resource.data.creatorId &&
+                      request.resource.data.currentAmount == 0 &&
+                      (request.resource.data.status == 'active' || request.resource.data.status == 'draft') &&
+                      request.resource.data.title is string && request.resource.data.title.size() > 0 &&
+                      request.resource.data.description is string && request.resource.data.description.size() > 0 &&
+                      request.resource.data.targetAmount is number && request.resource.data.targetAmount > 0 &&
+                      request.resource.data.category is string && request.resource.data.category.size() > 0 &&
+                      // Client should set timestamps to request.time if server doesn't use FieldValue.serverTimestamp() for client-set creates.
+                      // Or remove this line if server exclusively sets createdAt/updatedAt via serverTimestamp().
+                      (request.resource.data.createdAt == request.time || request.resource.data.createdAt == null) &&
+                      (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt == null) &&
+                      // Participants map should be empty or not present on creation by client. Server adds participants.
+                      (!('participants' in request.resource.data) || request.resource.data.participants.size() == 0);
+
+      // Allow updates by the project creator, with restrictions. Server validates more.
+      allow update: if request.auth != null && request.auth.uid == resource.data.creatorId &&
+                      // Prevent changing creatorId and createdAt.
+                      request.resource.data.creatorId == resource.data.creatorId &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      // Allow targetAmount to be changed only if status is 'draft'.
+                      (resource.data.status == 'draft' || request.resource.data.targetAmount == resource.data.targetAmount) &&
+                      // currentAmount and participants map are only updatable by server (via contributions) or if project is 'draft'.
+                      (request.resource.data.currentAmount == resource.data.currentAmount || resource.data.status == 'draft') &&
+                      (request.resource.data.participants == resource.data.participants || resource.data.status == 'draft') &&
+                      // Client can update title, description, images, deadline, category.
+                      // Client can change status from 'draft' to 'active', or 'active' to 'cancelled'.
+                      // Server handles transitions to 'funded', 'in_progress', 'completed'.
+                      (
+                        (request.resource.data.status == resource.data.status) || // Status not changing
+                        (resource.data.status == 'draft' && request.resource.data.status == 'active') ||
+                        (resource.data.status == 'active' && request.resource.data.status == 'cancelled')
+                      ) &&
+                      // Client must set updatedAt to request.time if server doesn't use FieldValue.serverTimestamp().
+                      (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt == null);
+
+
+      // Disallow client-side deletion. Server handles this (e.g., creator cancels a 'draft' project).
+      allow delete: if false;
+    }
+
+    // Rules for the 'starCauses' collection
+    match /starCauses/{causeId} {
+      // Allow public read access to approved/active/completed causes
+      allow read: if resource.data.status in ['approved', 'active', 'completed', 'funded']; // Added 'funded' as a readable status
+
+      // Allow creation by any authenticated user (as an application)
+      // - applicantId must be the UID of the creator
+      // - Initial currentAmount must be 0
+      // - Initial status must be 'pending'
+      allow create: if request.auth != null &&
+                      request.auth.uid == request.resource.data.applicantId &&
+                      request.resource.data.currentAmount == 0 &&
+                      request.resource.data.status == 'pending' &&
+                      request.resource.data.title is string && request.resource.data.title.size() > 0 &&
+                      request.resource.data.description is string && request.resource.data.description.size() > 0 &&
+                      request.resource.data.targetAmount is number && request.resource.data.targetAmount > 0 &&
+                      request.resource.data.category is string && request.resource.data.category.size() > 0 &&
+                      // championId might be null or set if applicant is also champion initially
+                      (request.resource.data.championId == null || request.resource.data.championId == request.auth.uid || request.resource.data.championId is string) &&
+                      // Ensure server-set fields are not client-writable on create or match server intent
+                      (request.resource.data.createdAt == request.time || request.resource.data.createdAt == null) &&
+                      (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt == null);
+
+
+      // Allow updates by the championId or an admin (admin logic handled by server)
+      // Restrict client updates to specific fields and states.
+      allow update: if request.auth != null &&
+                      (request.auth.uid == resource.data.championId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') &&
+                      // Prevent changing key immutable fields
+                      request.resource.data.applicantId == resource.data.applicantId &&
+                      // Champion ID itself generally shouldn't be changed by the champion via this rule; admin action.
+                      request.resource.data.championId == resource.data.championId &&
+                      request.resource.data.createdAt == resource.data.createdAt &&
+                      // currentAmount updated by server on donation.
+                      request.resource.data.currentAmount == resource.data.currentAmount &&
+                      // Status changes (e.g. to 'active', 'completed', 'rejected') are admin/server-driven mostly.
+                      // Champion might update descriptive fields if cause is 'approved' or 'active'.
+                      (resource.data.status in ['approved', 'active']) &&
+                      // Client must set updatedAt to request.time or server uses FieldValue.serverTimestamp()
+                      (request.resource.data.updatedAt == request.time || request.resource.data.updatedAt == null);
+
+
+      // Disallow client-side deletion.
+      allow delete: if false;
+    }
+
+    // Rules for the 'causeDonations' collection (New Top-Level Collection)
+    match /causeDonations/{donationId} {
+      // Allow donor to read their own donation.
+      // Admin can read any. Champion of the cause can read donations for their cause.
+      allow read: if request.auth != null &&
+                    (request.auth.uid == resource.data.donorId ||
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+                     get(/databases/$(database)/documents/starCauses/$(resource.data.causeId)).data.championId == request.auth.uid);
+
+      // Allow creation by any authenticated user (donor)
+      // - donorId must be their UID
+      // - causeId must be valid (exists and is active - server should verify this)
+      // - amount must be positive
+      // - createdAt is set by client to request.time (or server uses serverTimestamp)
+      allow create: if request.auth != null &&
+                      request.auth.uid == request.resource.data.donorId &&
+                      request.resource.data.causeId is string && request.resource.data.causeId.size() > 0 &&
+                      request.resource.data.amount is number && request.resource.data.amount > 0 &&
+                      (request.resource.data.createdAt == request.time || request.resource.data.createdAt == null);
+
+      // No updates or deletes by clients.
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+  // Future configurations for hosting, functions, etc., can be added here.
+  // Example for hosting (if client is deployed with Firebase Hosting):
+  // "hosting": {
+  //   "public": "client/dist", // Assuming 'client/dist' is the build output directory
+  //   "ignore": [
+  //     "firebase.json",
+  //     "**/.*",
+  //     "**/node_modules/**"
+  //   ],
+  //   "rewrites": [
+  //     {
+  //       "source": "**",
+  //       "destination": "/index.html"
+  //     }
+  //   ]
+  // }
+}

@@ -9,6 +9,7 @@ import { Loader2, Shield, AlertCircle } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { authManager } from "@/lib/auth";
+import { trackEvent } from "@/lib/analytics";
 
 interface BookingFormProps {
   service: {
@@ -36,17 +37,26 @@ export default function BookingForm({ service, provider, onSuccess }: BookingFor
 
   const mutation = useMutation({
     mutationFn: async (bookingData: any) => {
+      const totalTokens = bookingData.duration * service.pricePerHour;
       const response = await apiRequest("POST", "/api/bookings", {
         ...bookingData,
         serviceId: service.id,
         providerId: service.providerId,
-        totalTokens: bookingData.duration * service.pricePerHour,
+        totalTokens: totalTokens,
       });
-      return response.json();
+      // Assuming the response contains the created booking with its ID
+      const responseData = await response.json();
+      return { ...responseData, totalTokens }; // Pass totalTokens to onSuccess
     },
-    onSuccess: () => {
+    onSuccess: (data) => { // data here is what's returned from mutationFn
       queryClient.invalidateQueries({ queryKey: ['/api/bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/wallet'] });
+
+      // Track Booking Create event
+      trackEvent("Create", "Booking", `ServiceID_${service.id}`, data.totalTokens);
+      // Track Token Escrow event
+      trackEvent("Escrow", "Token", `Service_${service.title}`, data.totalTokens);
+
       onSuccess();
     },
     onError: (error: Error) => {

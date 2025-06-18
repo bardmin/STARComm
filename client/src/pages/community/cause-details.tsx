@@ -11,6 +11,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { authManager } from "@/lib/auth";
+import { trackEvent } from "@/lib/analytics";
 
 export default function CauseDetails() {
   const params = useParams();
@@ -48,6 +49,8 @@ export default function CauseDetails() {
         title: "Donation Successful!",
         description: `You donated ${donationAmount} tokens to this cause.`,
       });
+      // Track Cause Donate event
+      trackEvent("Donate", "Cause", `CauseID_${causeId}, Amount${donationAmount}`, parseInt(donationAmount));
       setDonationAmount("");
     },
     onError: (error: Error) => {

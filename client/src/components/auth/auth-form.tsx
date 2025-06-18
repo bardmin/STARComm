@@ -5,8 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
-import { authManager } from "@/lib/auth";
-import { apiRequest } from "@/lib/queryClient";
+import { authManager, establishServerSession } from "@/lib/auth"; // Import establishServerSession
+import { apiRequest } from "@/lib/queryClient"; // This might be replaced by establishServerSession for login
+import { auth as firebaseClientAuth } from "@/firebase"; // Import Firebase client auth instance
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 interface AuthFormProps {
   mode: "login" | "register";
@@ -30,20 +32,48 @@ export default function AuthForm({ mode, onSuccess }: AuthFormProps) {
     setLoading(true);
     setError("");
 
-    try {
-      const endpoint = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const payload = mode === "login" 
-        ? { email: formData.email, password: formData.password }
-        : formData;
+    if (mode === 'login') {
+      try {
+        const userCredential = await signInWithEmailAndPassword(firebaseClientAuth, formData.email, formData.password);
+        const idToken = await userCredential.user.getIdToken();
 
-      const response = await apiRequest("POST", endpoint, payload);
-      const data = await response.json();
+        // Call establishServerSession which handles backend call and authManager.setAuth
+        await establishServerSession(idToken);
+        onSuccess?.();
+      } catch (firebaseError: any) {
+        console.error("Firebase login error:", firebaseError);
+        if (firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/wrong-password' || firebaseError.code === 'auth/invalid-credential') {
+          setError("Invalid email or password.");
+        } else {
+          setError(firebaseError.message || "Failed to login with Firebase.");
+        }
+      } finally {
+        setLoading(false);
+      }
+    } else { // Register mode (keeps existing logic for now, but server endpoint is refactored)
+      try {
+        const endpoint = "/api/auth/register"; // Register still goes to our backend
+        const payload = formData;
 
-      authManager.setAuth(data.user, data.token);
-      onSuccess?.();
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "An error occurred");
-    } finally {
+        const response = await apiRequest("POST", endpoint, payload); // Using existing apiRequest
+
+        // The response from POST /api/auth/register does not include a token anymore.
+        // It includes { message, userId, email, role }.
+        // After successful registration, user should be redirected to login.
+        // For now, we can show a success message and let onSuccess handle redirection to login.
+        // authManager.setAuth(data.user, data.token); // This line is removed as no token is returned
+        console.log("Registration successful via server, user data:", await response.json());
+        // onSuccess should ideally redirect to login page or show a "Please login" message.
+        onSuccess?.(); // This might need adjustment in the parent component using AuthForm
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "An error occurred during registration");
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setLoading(false);
     }
   };

@@ -11,6 +11,7 @@ import { useState } from "react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { authManager } from "@/lib/auth";
+import { trackEvent } from "@/lib/analytics";
 
 export default function ProjectDetails() {
   const params = useParams();
@@ -48,6 +49,8 @@ export default function ProjectDetails() {
         title: "Contribution Successful!",
         description: `You contributed ${contributionAmount} tokens to this project.`,
       });
+      // Track Project Contribute event
+      trackEvent("Contribute", "Project", `ProjectID_${projectId}, Amount${contributionAmount}`, parseInt(contributionAmount));
       setContributionAmount("");
     },
     onError: (error: Error) => {

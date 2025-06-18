@@ -19,11 +19,15 @@ interface Service {
   isAvailable: boolean;
 }
 
+// Updated to match Firestore structure and server response
 interface ServiceCategory {
-  id: number;
+  id: string; // Firestore document ID is a string
   name: string;
-  description: string;
-  icon: string;
+  description?: string;
+  iconUrl?: string; // Changed from icon to iconUrl
+  parentId?: string | null;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 interface ServiceProvider {

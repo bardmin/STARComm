@@ -5,20 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 
 interface ServiceSearchProps {
-  onSearch: (query: string, category: number | null, distance: string) => void;
+  onSearch: (query: string, categoryId: string | null, distance: string) => void; // categoryId is now string
   categories: Array<{
-    id: number;
+    id: string; // Changed from number to string
     name: string;
+    // Add other fields if needed by this component, e.g., iconUrl
   }>;
 }
 
 export default function ServiceSearch({ onSearch, categories }: ServiceSearchProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null); // Changed to string | null
   const [selectedDistance, setSelectedDistance] = useState("any");
 
   const handleSearch = () => {
-    onSearch(searchQuery, selectedCategory, selectedDistance);
+    onSearch(searchQuery, selectedCategory, selectedDistance); // selectedCategory is now string | null
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -47,12 +48,12 @@ export default function ServiceSearch({ onSearch, categories }: ServiceSearchPro
           <div className="flex flex-col sm:flex-row gap-3">
             <select
               value={selectedCategory || ''}
-              onChange={(e) => setSelectedCategory(e.target.value ? parseInt(e.target.value) : null)}
+              onChange={(e) => setSelectedCategory(e.target.value || null)} // Value is already string or empty string for null
               className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-blue focus:border-transparent"
             >
               <option value="">All Categories</option>
               {categories.map((category) => (
-                <option key={category.id} value={category.id}>
+                <option key={category.id} value={category.id}> {/* category.id is now string */}
                   {category.name}
                 </option>
               ))}

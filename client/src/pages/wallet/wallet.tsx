@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { authManager } from "@/lib/auth";
+import { trackEvent } from "@/lib/analytics";
 
 interface Wallet {
   id: number;
@@ -62,6 +63,8 @@ export default function Wallet() {
         title: "Tokens purchased successfully!",
         description: `${purchaseAmount} tokens have been added to your wallet.`,
       });
+      // Track token purchase event
+      trackEvent("Purchase", "Token", `Amount${purchaseAmount}`, parseInt(purchaseAmount));
       setPurchaseAmount("");
       setIsDialogOpen(false);
     },
@@ -88,6 +91,14 @@ export default function Wallet() {
         title: "Tokens redeemed successfully!",
         description: "Your tokens have been converted to cash at 60% rate.",
       });
+      // Track token redemption event
+      // We need to know the amount redeemed. The `amount` parameter passed to redeemTokensMutation.mutate is not directly available here.
+      // Assuming the actual redeemed amount is part of the response or can be inferred.
+      // For now, let's use the input amount to handleRedeem, which is not ideal but a placeholder.
+      // A better approach would be to get this from the mutation's response or state if available.
+      if (wallet && amount) { // Ensure wallet and amount are defined
+        trackEvent("Redeem", "Token", `Amount${amount}`, amount);
+      }
     },
     onError: (error: any) => {
       toast({

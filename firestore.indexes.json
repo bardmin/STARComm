@@ -1,0 +1,24 @@
+{
+  "indexes": [
+    // Example basic index (if you query users by role often)
+    // {
+    //   "collectionGroup": "users",
+    //   "queryScope": "COLLECTION",
+    //   "fields": [
+    //     { "fieldPath": "role", "order": "ASCENDING" },
+    //     { "fieldPath": "createdAt", "order": "DESCENDING" }
+    //   ]
+    // }
+  ],
+  "fieldOverrides": [
+    // Example field override (if needed for specific fields in composite indexes)
+    // {
+    //   "collectionGroup": "users",
+    //   "fieldPath": "createdAt",
+    //   "indexes": [
+    //     { "order": "ASCENDING", "queryScope": "COLLECTION" },
+    //     { "order": "DESCENDING", "queryScope": "COLLECTION" }
+    //   ]
+    // }
+  ]
+}

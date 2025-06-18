@@ -1,5 +1,11 @@
+// TODO: This authManager will be refactored to integrate with Firebase Authentication.
+// The current implementation uses JWTs and localStorage for a custom auth system.
+// Future steps will involve using `firebase/auth` for user management, sign-in, sign-up,
+// and token handling (Firebase ID tokens).
+import { apiRequest } from "./queryClient"; // For making API calls
+
 export interface User {
-  id: number;
+  id: string; // Changed to string to accommodate Firebase UID
   email: string;
   firstName: string;
   lastName: string;
@@ -92,15 +98,32 @@ class AuthManager {
     this.saveToStorage();
   }
 
-  updateUser(user: User) {
-    if (this.authState.isAuthenticated) {
-      this.authState.user = user;
+  updateUser(updatedFields: Partial<User>) { // Accept partial updates
+    if (this.authState.isAuthenticated && this.authState.user) {
+      this.authState.user = { ...this.authState.user, ...updatedFields };
       this.saveToStorage();
     }
   }
 
-  logout() {
-    this.clearAuth();
+  async logout() { // Make logout async
+    try {
+      // Dynamically import to avoid circular dependencies if firebase.ts imports authManager
+      // Or ensure firebase services are initialized before authManager is constructed.
+      const firebaseModule = await import('@/firebase');
+      if (firebaseModule && firebaseModule.auth) {
+        await firebaseModule.auth.signOut();
+        console.log("Firebase client signed out successfully.");
+      } else {
+        console.warn("Firebase auth instance not available for client signOut.");
+      }
+    } catch (error) {
+      console.error("Error signing out from Firebase client:", error);
+      // Proceed with clearing local auth state even if Firebase signout fails,
+      // as the custom session token is the primary concern for the backend.
+    }
+    this.clearAuth(); // Clears custom JWT from local storage and local auth state
+    // Typically, redirection or UI updates are handled by the component calling logout
+    // or by an auth state listener.
   }
 
   isRole(role: string): boolean {
@@ -113,3 +136,33 @@ class AuthManager {
 }
 
 export const authManager = AuthManager.getInstance();
+
+// New function to establish server session using Firebase ID token
+export const establishServerSession = async (idToken: string): Promise<void> => {
+  try {
+    const response = await apiRequest("POST", "/api/auth/sessionLogin", { token: idToken });
+    const data = await response.json(); // Expects { token: customJwt, user: { uid, email, role, ... } }
+
+    if (!data.token || !data.user) {
+      throw new Error("Failed to establish server session: Invalid response from server.");
+    }
+
+    // Map Firebase UID from data.user.uid or data.user.userId to authManager's user.id
+    const serverUser = {
+      ...data.user,
+      id: data.user.uid || data.user.userId || data.user.id, // Ensure 'id' is set, preferably as string UID
+    };
+
+    authManager.setAuth(serverUser, data.token); // Store custom JWT and user profile
+
+    // Optionally, trigger a refetch of user-specific data or redirect
+    // This part might be handled by the calling component's onSuccess callback
+    console.log("Server session established. Custom JWT and user profile stored.");
+
+  } catch (error) {
+    console.error("Error establishing server session:", error);
+    // authManager.logout(); // Caller should handle UI, logout is now more comprehensive
+    // Re-throw the error so the calling component (e.g., AuthForm) can handle it (e.g., show error message)
+    throw error;
+  }
+};
