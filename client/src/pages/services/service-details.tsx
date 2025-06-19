@@ -7,34 +7,60 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { MapPin, Clock, Star, Shield, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import BookingForm from "@/components/booking/booking-form";
+import { Service, ServiceProviderInfo } from "./services"; // Assuming types are exported from services.tsx or a shared types file
+import { apiRequest } from "@/lib/queryClient"; // For direct API calls if useQuery isn't fully adapted yet
 
-export default function ServiceDetails() {
+// Define Review type based on expected structure (align with backend)
+interface Review {
+  id: string;
+  reviewerId: string;
+  revieweeId: string;
+  bookingId: string;
+  rating: number;
+  comment: string;
+  createdAt: any; // Firestore timestamp or ISO string
+  // Add reviewerName or other denormalized fields if backend provides them
+  reviewerInfo?: { firstName?: string; lastName?: string; profileImageUrl?: string };
+}
+
+export default function ServiceDetailsPage() { // Renamed component
   const params = useParams();
   const [, setLocation] = useLocation();
   const [showBookingForm, setShowBookingForm] = useState(false);
-  const serviceId = parseInt(params.id || "0");
+  const serviceId = params.id || ""; // serviceId is now a string
 
-  const { data: service, isLoading: serviceLoading } = useQuery({
-    queryKey: ["/api/services", serviceId],
+  // Fetch single service details
+  const { data: service, isLoading: serviceLoading, error: serviceError } = useQuery<Service>({
+    queryKey: ["service", serviceId], // Use more specific queryKey
+    queryFn: async () => {
+      if (!serviceId) throw new Error("Service ID is required.");
+      const response = await apiRequest("GET", `/api/services/${serviceId}`);
+      return response.json();
+    },
     enabled: !!serviceId,
   });
 
-  const { data: provider, isLoading: providerLoading } = useQuery({
-    queryKey: ["/api/users", service?.providerId],
-    enabled: !!service?.providerId,
+  // Reviews are fetched based on the serviceProviderId (revieweeId)
+  const serviceProviderId = service?.serviceProviderId;
+  const { data: reviewData, isLoading: reviewsLoading } = useQuery<{reviews: Review[], nextCursor: string | null}>({
+    queryKey: ["reviews", "provider", serviceProviderId],
+    queryFn: async () => {
+      if (!serviceProviderId) return { reviews: [], nextCursor: null }; // Or throw error if providerId is essential
+      const response = await apiRequest("GET", `/api/reviews?revieweeId=${serviceProviderId}&limit=5`); // Fetch first 5 reviews
+      return response.json();
+    },
+    enabled: !!serviceProviderId,
   });
+  const reviews = reviewData?.reviews || [];
 
-  const { data: reviews = [] } = useQuery({
-    queryKey: ["/api/reviews/service", serviceId],
-    enabled: !!serviceId,
-  });
+  // Category data: Ideally, categoryName is part of 'service' object if denormalized by backend.
+  // If not, and you have a global categories store/context from services.tsx, use that.
+  // For simplicity, we'll assume categoryId is displayed or categoryName is part of service if needed.
+  // const { data: category } = useQuery... (Removed separate category fetch if not essential for display here)
 
-  const { data: category } = useQuery({
-    queryKey: ["/api/service-categories", service?.categoryId],
-    enabled: !!service?.categoryId,
-  });
+  const provider = service?.providerInfo; // Provider info is now embedded in service object
 
-  if (serviceLoading || providerLoading) {
+  if (serviceLoading || (serviceProviderId && reviewsLoading)) { // Adjusted loading check
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 p-4">
         <div className="max-w-4xl mx-auto">
@@ -48,12 +74,23 @@ export default function ServiceDetails() {
     );
   }
 
-  if (!service || !provider) {
+  if (serviceError) {
+    return (
+      <div className="container mx-auto px-4 py-8 text-center">
+        <Alert variant="destructive">
+          <AlertDescription>Error loading service: {(serviceError as Error).message}</AlertDescription>
+        </Alert>
+        <Button onClick={() => setLocation("/services")} className="mt-4">Back to Services</Button>
+      </div>
+    );
+  }
+
+  if (!service) { // service might be undefined if query is disabled or fails silently before error state
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Service Not Found</h2>
-          <p className="text-gray-600 mb-4">The service you're looking for doesn't exist.</p>
+          <p className="text-gray-600 mb-4">The service you're looking for might not exist or failed to load.</p>
           <Button onClick={() => setLocation("/services")}>
             Back to Services
           </Button>
@@ -62,12 +99,12 @@ export default function ServiceDetails() {
     );
   }
 
-  const averageRating = reviews.length > 0 
-    ? reviews.reduce((acc: number, review: any) => acc + review.rating, 0) / reviews.length
-    : 0;
+  // Use averageRating and reviewCount from service object (populated by backend)
+  const averageRating = service.averageRating || 0;
+  const reviewCount = service.reviewCount || 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 dark:bg-gray-900 dark:text-white">
       <div className="max-w-6xl mx-auto p-4 pt-8">
         {/* Back Button */}
         <Button
@@ -87,36 +124,49 @@ export default function ServiceDetails() {
               <CardContent className="p-8">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h1 className="text-3xl font-bold text-gray-900 mb-2">{service.title}</h1>
-                    {category && (
-                      <Badge variant="secondary" className="mb-4">
-                        {category.name}
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">{service.name}</h1>
+                    {service.categoryName && ( // Display categoryName if backend provides it
+                      <Badge variant="secondary" className="mb-4 bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                        {service.categoryName}
                       </Badge>
                     )}
                   </div>
                   <div className="text-right">
                     <div className="text-3xl font-bold text-token-gold mb-1">
-                      {service.pricePerHour} tokens/hour
+                      {service.basePrice} tokens {service.serviceType === 'on_demand' ? '/ task' : service.priceUnit || '/hr'}
                     </div>
-                    <div className="text-sm text-gray-500">
-                      ≈ ${(service.pricePerHour * 0.6).toFixed(2)}/hour
-                    </div>
+                    {/* Optional: Display equivalent cash value if applicable */}
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-4 mb-6">
-                  <div className="flex items-center text-gray-600">
-                    <MapPin className="h-4 w-4 mr-1" />
-                    <span className="text-sm">{service.location}</span>
-                  </div>
-                  <div className="flex items-center text-gray-600">
-                    <Clock className="h-4 w-4 mr-1" />
-                    <span className="text-sm">Available Today</span>
-                  </div>
-                  {reviews.length > 0 && (
-                    <div className="flex items-center text-gray-600">
+                {/* Image Gallery/Carousel */}
+                {service.images && service.images.length > 0 && (
+                    <div className="mb-6">
+                        <img src={service.images[0]} alt={service.name} className="w-full h-64 object-cover rounded-lg shadow-md"/>
+                        {/* TODO: Implement a carousel if multiple images */}
+                    </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6">
+                  {service.location?.city && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-300">
+                      <MapPin className="h-4 w-4 mr-1" />
+                      <span className="text-sm">{service.location.city}{service.location.state ? `, ${service.location.state}` : ''}</span>
+                    </div>
+                  )}
+                  {service.isActive ? (
+                     <div className="flex items-center text-green-600 dark:text-green-400">
+                        <Clock className="h-4 w-4 mr-1" /> Available
+                     </div>
+                    ) : (
+                     <div className="flex items-center text-red-500 dark:text-red-400">
+                        <Clock className="h-4 w-4 mr-1" /> Unavailable
+                     </div>
+                  )}
+                  {reviewCount > 0 && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-300">
                       <Star className="h-4 w-4 mr-1 fill-yellow-400 text-yellow-400" />
-                      <span className="text-sm">{averageRating.toFixed(1)} ({reviews.length} reviews)</span>
+                      <span className="text-sm">{averageRating.toFixed(1)} ({reviewCount} reviews)</span>
                     </div>
                   )}
                 </div>

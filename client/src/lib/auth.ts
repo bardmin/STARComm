@@ -11,9 +11,11 @@ export interface User {
   lastName: string;
   role: string;
   phoneNumber?: string;
-  profileImage?: string;
+  profileImageUrl?: string; // Changed from profileImage to align with server response
   isVerified: boolean;
   isActive: boolean;
+  createdAt?: string; // Added
+  updatedAt?: string; // Added
 }
 
 export interface AuthState {

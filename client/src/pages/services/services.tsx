@@ -7,16 +7,36 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiRequest } from "@/lib/queryClient"; // For direct API calls
 
-interface Service {
-  id: number;
-  title: string;
+// Interface for provider info that might be embedded or fetched separately
+export interface ServiceProviderInfo { // Renamed from ServiceProvider to avoid conflict if used elsewhere
+  id: string; // Provider's Firebase UID
+  firstName?: string;
+  lastName?: string;
+  profileImageUrl?: string;
+}
+
+// Updated Service interface to match Firestore data structure
+export interface Service {
+  id: string; // Firestore Document ID
+  name: string;
   description: string;
-  pricePerHour: number;
-  location?: string;
-  categoryId: number;
-  providerId: number;
-  isAvailable: boolean;
+  categoryId: string;
+  categoryName?: string;
+  serviceProviderId: string;
+  basePrice: number;
+  serviceType?: 'on_demand' | 'scheduled';
+  location?: { address?: string; city?: string; state?: string; zip?: string; country?: string; lat?: number; lng?: number };
+  availability?: { type?: 'days' | 'specific_dates'; days?: string[]; specificDates?: string[]; startTime?: string; endTime?: string };
+  images?: string[];
+  isActive: boolean;
+  requirements?: string;
+  averageRating?: number;
+  reviewCount?: number;
+  createdAt?: any; // Firestore Timestamp or ISO string from server
+  updatedAt?: any; // Firestore Timestamp or ISO string from server
+  providerInfo?: ServiceProviderInfo; // Embedded by backend on detail view, not list view
 }
 
 // Updated to match Firestore structure and server response
@@ -34,55 +54,71 @@ interface ServiceProvider {
   id: number;
   firstName: string;
   lastName: string;
-  profileImage?: string;
+  profileImageUrl?: string; // Changed from profileImage
 }
 
-export default function Services() {
+export default function ServicesPage() { // Renamed component for clarity
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("newest");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all"); // Category ID is string
+  const [sortBy, setSortBy] = useState<string>("createdAt_desc"); // Default sort matching backend
+  // Add state for pagination if implementing infinite scroll or next/prev buttons
+  // const [lastVisibleDocId, setLastVisibleDocId] = useState<string | null>(null);
 
-  const { data: services = [], isLoading: servicesLoading } = useQuery({
-    queryKey: ["/api/services"],
-  });
+  const fetchServices = async ({ pageParam }: { pageParam?: string | null }) => {
+    const params = new URLSearchParams();
+    if (selectedCategory !== "all") params.append("categoryId", selectedCategory);
+    if (searchTerm) params.append("search", searchTerm); // Server needs to handle search
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ["/api/service-categories"],
-  });
-
-  const { data: providers = [] } = useQuery({
-    queryKey: ["/api/users/providers"],
-  });
-
-  // Filter and sort services
-  const filteredServices = services.filter((service: Service) => {
-    const matchesSearch = service.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         service.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = selectedCategory === "all" || service.categoryId.toString() === selectedCategory;
-    return matchesSearch && matchesCategory && service.isAvailable;
-  });
-
-  const sortedServices = [...filteredServices].sort((a: Service, b: Service) => {
-    switch (sortBy) {
-      case "price-low":
-        return a.pricePerHour - b.pricePerHour;
-      case "price-high":
-        return b.pricePerHour - a.pricePerHour;
-      case "newest":
-      default:
-        return b.id - a.id;
+    // Sorting logic based on sortBy state
+    if (sortBy === 'price_asc') {
+      params.append('sortBy', 'basePrice');
+      params.append('sortOrder', 'asc');
+    } else if (sortBy === 'price_desc') {
+      params.append('sortBy', 'basePrice');
+      params.append('sortOrder', 'desc');
+    } else if (sortBy === 'name_asc') {
+        params.append('sortBy', 'name');
+        params.append('sortOrder', 'asc');
+    } else { // Default: newest (createdAt desc)
+      params.append('sortBy', 'createdAt');
+      params.append('sortOrder', 'desc');
     }
+    params.append("limit", "9"); // Example limit
+    if (pageParam) {
+      params.append("lastVisible", pageParam);
+    }
+
+    const response = await apiRequest("GET", `/api/services?${params.toString()}`);
+    return response.json(); // Expects { services: Service[], nextCursor: string | null }
+  };
+
+  // Using useQuery for services, will refetch when queryKey changes
+  const {
+    data: serviceData,
+    isLoading: servicesLoading,
+    error: servicesError,
+    // fetchNextPage, hasNextPage, isFetchingNextPage // For infinite scroll
+  } = useQuery<{services: Service[], nextCursor: string | null}>({
+    queryKey: ["services", selectedCategory, searchTerm, sortBy],
+    queryFn: () => fetchServices({ pageParam: null }), // Initial fetch
+    // getNextPageParam: (lastPage) => lastPage.nextCursor, // For infinite scroll
   });
 
-  const getProvider = (providerId: number) => {
-    return providers.find((p: ServiceProvider) => p.id === providerId);
+  const displayedServices = serviceData?.services || [];
+
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<ServiceCategory[]>({
+    queryKey: ["service-categories"], // Changed queryKey to be more descriptive
+    queryFn: async () => apiRequest("GET", "/api/service-categories").then(res => res.json()),
+  });
+
+  // Removed direct providers fetch; provider info comes from service details page.
+  // Client-side filtering and sorting are removed in favor of backend operations.
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find((c) => c.id === categoryId)?.name;
   };
 
-  const getCategory = (categoryId: number) => {
-    return categories.find((c: ServiceCategory) => c.id === categoryId);
-  };
-
-  if (servicesLoading) {
+  if (servicesLoading || categoriesLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <div className="container mx-auto px-4 py-8">
@@ -141,80 +177,84 @@ export default function Services() {
                 <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="price-low">Price: Low to High</SelectItem>
-                <SelectItem value="price-high">Price: High to Low</SelectItem>
+                <SelectItem value="createdAt_desc">Newest First</SelectItem>
+                <SelectItem value="price_asc">Price: Low to High</SelectItem>
+                <SelectItem value="price_desc">Price: High to Low</SelectItem>
+                <SelectItem value="name_asc">Name: A-Z</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
         {/* Services Grid */}
-        {sortedServices.length === 0 ? (
+        {servicesError && (
+            <Alert variant="destructive" className="my-4">
+                <AlertDescription>Error loading services: {(servicesError as Error).message}</AlertDescription>
+            </Alert>
+        )}
+        {(!servicesLoading && !servicesError && displayedServices.length === 0) ? (
           <div className="text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <Search className="h-16 w-16 mx-auto" />
-            </div>
+            <Search className="h-16 w-16 mx-auto text-gray-400 mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               No services found
             </h3>
             <p className="text-gray-600 dark:text-gray-400">
-              Try adjusting your search criteria or browse all categories
+              Try adjusting your search or filter criteria.
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedServices.map((service: Service) => {
-              const provider = getProvider(service.providerId);
-              const category = getCategory(service.categoryId);
+            {displayedServices.map((service: Service) => {
+              const categoryName = getCategoryName(service.categoryId) || service.categoryId;
               
               return (
-                <Card key={service.id} className="hover:shadow-lg transition-shadow">
+                <Card key={service.id} className="hover:shadow-lg transition-shadow flex flex-col">
                   <CardHeader>
-                    <div className="flex justify-between items-start mb-2">
+                    {service.images && service.images.length > 0 && (
+                      <img src={service.images[0]} alt={service.name} className="w-full h-40 object-cover rounded-t-md mb-2"/>
+                    )}
+                    <div className="flex justify-between items-start mb-1">
                       <Badge variant="secondary" className="text-xs">
-                        {category?.name || 'Service'}
+                        {categoryName}
                       </Badge>
                       <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                        <DollarSign className="h-4 w-4 mr-1" />
-                        {service.pricePerHour} tokens/hr
+                        <DollarSign className="h-4 w-4 mr-1 text-token-gold" />
+                        {service.basePrice} tokens {service.serviceType === 'on_demand' ? '/ task' : service.priceUnit || '/hr'}
                       </div>
                     </div>
-                    <CardTitle className="text-lg">{service.title}</CardTitle>
+                    <CardTitle className="text-lg">{service.name}</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-3">
+                  <CardContent className="flex-grow">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-3 h-16">
                       {service.description}
                     </p>
-                    
-                    <div className="space-y-2">
-                      {provider && (
-                        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                          <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mr-2">
-                            <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">
-                              {provider.firstName[0]}{provider.lastName[0]}
-                            </span>
-                          </div>
-                          {provider.firstName} {provider.lastName}
+                    <div className="space-y-1 text-xs text-gray-500">
+                      {service.location?.city && (
+                        <div className="flex items-center">
+                          <MapPin className="h-3 w-3 mr-1.5" />
+                          {service.location.city}{service.location.state ? `, ${service.location.state}` : ''}
                         </div>
                       )}
-                      
-                      {service.location && (
-                        <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                          <MapPin className="h-4 w-4 mr-2" />
-                          {service.location}
+                       {service.isActive ? (
+                        <div className="flex items-center text-green-600">
+                          <Clock className="h-3 w-3 mr-1.5" />
+                          Available
+                        </div>
+                      ) : (
+                         <div className="flex items-center text-red-500">
+                           <Clock className="h-3 w-3 mr-1.5" />
+                           Unavailable
                         </div>
                       )}
-                      
-                      <div className="flex items-center text-sm text-green-600 dark:text-green-400">
-                        <Clock className="h-4 w-4 mr-2" />
-                        Available now
-                      </div>
+                       <div className="flex items-center">
+                          <Star className="h-3 w-3 mr-1.5 text-yellow-400" />
+                          {service.averageRating?.toFixed(1) || 'New'} ({service.reviewCount || 0} reviews)
+                       </div>
                     </div>
                   </CardContent>
                   <CardFooter>
                     <Link href={`/services/${service.id}`} className="w-full">
-                      <Button className="w-full">
+                      <Button className="w-full bg-primary-blue hover:bg-primary-blue-dark text-white">
                         View Details & Book
                       </Button>
                     </Link>
@@ -225,10 +265,19 @@ export default function Services() {
           </div>
         )}
 
+        {/* Add Pagination controls here if not using infinite scroll */}
+        {/* Example:
+          {serviceData?.nextCursor && (
+            <Button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading more...' : 'Load More'}
+            </Button>
+          )}
+        */}
+
         {/* Results Summary */}
-        {sortedServices.length > 0 && (
+        {displayedServices.length > 0 && (
           <div className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400">
-            Showing {sortedServices.length} of {services.length} services
+            Showing {displayedServices.length} services {/* Update this if using pagination to show total */}
           </div>
         )}
       </div>
