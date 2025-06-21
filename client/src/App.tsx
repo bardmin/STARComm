@@ -77,7 +77,7 @@ function SentryTestButton() {
 }
 
 function App() {
-  const SENTRY_DSN = process.env.VITE_SENTRY_CLIENT_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0";
+  const SENTRY_DSN = import.meta.env.VITE_SENTRY_CLIENT_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0";
   const showTestButton = SENTRY_DSN !== "https://examplePublicKey@o0.ingest.sentry.io/0";
   const [authInitialized, setAuthInitialized] = useState(false);
 

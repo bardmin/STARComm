@@ -1,3 +1,7 @@
+// Load environment variables FIRST, before any other imports
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { type Request, Response, NextFunction } from "express";
 import * as Sentry from "@sentry/node";
 import * as Tracing from "@sentry/tracing"; // Required for Express integration
@@ -70,7 +74,7 @@ const loginLimiter = rateLimit({
   max: 10, // Limit each IP to 10 login attempts per window
   message: { message: "Too many login attempts from this IP, please try again after 15 minutes." },
   // This would ideally be applied directly to the login route in routes.ts if more granular control is needed
-  // For now, if login is /api/auth/login, it will be covered by apiLimiter, then this adds further restriction
+  // For now, if login is /api/auth/login, it will be covered by apiLimiter, then then this adds further restriction
   // However, express-rate-limit applies the *first* matching limiter.
   // To make this effective, it should be applied specifically to the login route *before* the general /api limiter,
   // or the general /api limiter should exclude the login route.
@@ -118,6 +122,12 @@ app.use((req, res, next) => {
 
 
 (async () => {
+  // Debug: Check if environment variables are loaded
+  console.log('Environment check:');
+  console.log('GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
+  console.log('ENCRYPTION_KEY_HEX exists:', !!process.env.ENCRYPTION_KEY_HEX);
+
   // Initialize Firebase Admin SDK early in the startup sequence
   await initializeFirebaseAdmin();
 
