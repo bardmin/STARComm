@@ -5,7 +5,7 @@ import * as Sentry from "@sentry/react";
 import { BrowserTracing } from "@sentry/tracing";
 
 // Initialize Sentry for client-side error logging and performance monitoring
-const SENTRY_DSN = import.meta.env.VITE_SENTRY_CLIENT_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0";
+const SENTRY_DSN = process.env.VITE_SENTRY_CLIENT_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0";
 
 if (SENTRY_DSN !== "https://examplePublicKey@o0.ingest.sentry.io/0") {
   Sentry.init({
@@ -24,5 +24,6 @@ if (SENTRY_DSN !== "https://examplePublicKey@o0.ingest.sentry.io/0") {
 } else {
   console.warn("Sentry client DSN not found or is placeholder. Sentry not initialized for client-side.");
 }
+
 
 createRoot(document.getElementById("root")!).render(<App />);

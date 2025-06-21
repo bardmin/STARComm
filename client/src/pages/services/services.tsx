@@ -7,12 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest } from "@/lib/queryClient"; // For direct API calls
 
 // Interface for provider info that might be embedded or fetched separately
-export interface ServiceProviderInfo {
-  id: string;
+export interface ServiceProviderInfo { // Renamed from ServiceProvider to avoid conflict if used elsewhere
+  id: string; // Provider's Firebase UID
   firstName?: string;
   lastName?: string;
   profileImageUrl?: string;
@@ -20,7 +19,7 @@ export interface ServiceProviderInfo {
 
 // Updated Service interface to match Firestore data structure
 export interface Service {
-  id: string;
+  id: string; // Firestore Document ID
   name: string;
   description: string;
   categoryId: string;
@@ -28,139 +27,92 @@ export interface Service {
   serviceProviderId: string;
   basePrice: number;
   serviceType?: 'on_demand' | 'scheduled';
-  location?: { 
-    address?: string; 
-    city?: string; 
-    state?: string; 
-    zip?: string; 
-    country?: string; 
-    lat?: number; 
-    lng?: number; 
-  };
-  availability?: { 
-    type?: 'days' | 'specific_dates'; 
-    days?: string[]; 
-    specificDates?: string[]; 
-    startTime?: string; 
-    endTime?: string; 
-  };
+  location?: { address?: string; city?: string; state?: string; zip?: string; country?: string; lat?: number; lng?: number };
+  availability?: { type?: 'days' | 'specific_dates'; days?: string[]; specificDates?: string[]; startTime?: string; endTime?: string };
   images?: string[];
   isActive: boolean;
   requirements?: string;
   averageRating?: number;
   reviewCount?: number;
-  createdAt?: any;
-  updatedAt?: any;
-  providerInfo?: ServiceProviderInfo;
+  createdAt?: any; // Firestore Timestamp or ISO string from server
+  updatedAt?: any; // Firestore Timestamp or ISO string from server
+  providerInfo?: ServiceProviderInfo; // Embedded by backend on detail view, not list view
 }
 
 // Updated to match Firestore structure and server response
 interface ServiceCategory {
-  id: string;
+  id: string; // Firestore document ID is a string
   name: string;
   description?: string;
-  iconUrl?: string;
+  iconUrl?: string; // Changed from icon to iconUrl
   parentId?: string | null;
   sortOrder?: number;
   isActive?: boolean;
 }
 
-export default function ServicesPage() {
+interface ServiceProvider {
+  id: number;
+  firstName: string;
+  lastName: string;
+  profileImageUrl?: string; // Changed from profileImage
+}
+
+export default function ServicesPage() { // Renamed component for clarity
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("createdAt_desc");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all"); // Category ID is string
+  const [sortBy, setSortBy] = useState<string>("createdAt_desc"); // Default sort matching backend
+  // Add state for pagination if implementing infinite scroll or next/prev buttons
+  // const [lastVisibleDocId, setLastVisibleDocId] = useState<string | null>(null);
 
   const fetchServices = async ({ pageParam }: { pageParam?: string | null }) => {
-    try {
-      const params = new URLSearchParams();
-      if (selectedCategory !== "all") params.append("categoryId", selectedCategory);
-      if (searchTerm) params.append("search", searchTerm);
+    const params = new URLSearchParams();
+    if (selectedCategory !== "all") params.append("categoryId", selectedCategory);
+    if (searchTerm) params.append("search", searchTerm); // Server needs to handle search
 
-      // Sorting logic based on sortBy state
-      if (sortBy === 'price_asc') {
-        params.append('sortBy', 'basePrice');
-        params.append('sortOrder', 'asc');
-      } else if (sortBy === 'price_desc') {
-        params.append('sortBy', 'basePrice');
-        params.append('sortOrder', 'desc');
-      } else if (sortBy === 'name_asc') {
+    // Sorting logic based on sortBy state
+    if (sortBy === 'price_asc') {
+      params.append('sortBy', 'basePrice');
+      params.append('sortOrder', 'asc');
+    } else if (sortBy === 'price_desc') {
+      params.append('sortBy', 'basePrice');
+      params.append('sortOrder', 'desc');
+    } else if (sortBy === 'name_asc') {
         params.append('sortBy', 'name');
         params.append('sortOrder', 'asc');
-      } else {
-        params.append('sortBy', 'createdAt');
-        params.append('sortOrder', 'desc');
-      }
-      params.append("limit", "9");
-      if (pageParam) {
-        params.append("lastVisible", pageParam);
-      }
-
-      const response = await apiRequest("GET", `/api/services?${params.toString()}`);
-      
-      // Check if response is ok
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      // Check if response is JSON
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Expected JSON but received:", text);
-        throw new Error("Server responded with non-JSON content");
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error("Error fetching services:", error);
-      throw error;
+    } else { // Default: newest (createdAt desc)
+      params.append('sortBy', 'createdAt');
+      params.append('sortOrder', 'desc');
     }
+    params.append("limit", "9"); // Example limit
+    if (pageParam) {
+      params.append("lastVisible", pageParam);
+    }
+
+    const response = await apiRequest("GET", `/api/services?${params.toString()}`);
+    return response.json(); // Expects { services: Service[], nextCursor: string | null }
   };
 
-  const fetchCategories = async () => {
-    try {
-      const response = await apiRequest("GET", "/api/service-categories");
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Expected JSON but received:", text);
-        throw new Error("Server responded with non-JSON content");
-      }
-      
-      return await response.json();
-    } catch (error) {
-      console.error("Error fetching categories:", error);
-      throw error;
-    }
-  };
-
-  // Using useQuery for services
+  // Using useQuery for services, will refetch when queryKey changes
   const {
     data: serviceData,
     isLoading: servicesLoading,
     error: servicesError,
+    // fetchNextPage, hasNextPage, isFetchingNextPage // For infinite scroll
   } = useQuery<{services: Service[], nextCursor: string | null}>({
     queryKey: ["services", selectedCategory, searchTerm, sortBy],
-    queryFn: () => fetchServices({ pageParam: null }),
-    retry: false, // Don't retry failed requests
+    queryFn: () => fetchServices({ pageParam: null }), // Initial fetch
+    // getNextPageParam: (lastPage) => lastPage.nextCursor, // For infinite scroll
   });
 
   const displayedServices = serviceData?.services || [];
 
-  const { 
-    data: categories = [], 
-    isLoading: categoriesLoading,
-    error: categoriesError 
-  } = useQuery<ServiceCategory[]>({
-    queryKey: ["service-categories"],
-    queryFn: fetchCategories,
-    retry: false, // Don't retry failed requests
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<ServiceCategory[]>({
+    queryKey: ["service-categories"], // Changed queryKey to be more descriptive
+    queryFn: async () => apiRequest("GET", "/api/service-categories").then(res => res.json()),
   });
+
+  // Removed direct providers fetch; provider info comes from service details page.
+  // Client-side filtering and sorting are removed in favor of backend operations.
 
   const getCategoryName = (categoryId: string) => {
     return categories.find((c) => c.id === categoryId)?.name;
@@ -176,23 +128,6 @@ export default function ServicesPage() {
               <p className="text-gray-600 dark:text-gray-400">Loading services...</p>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Show error state if both services and categories failed to load
-  if (servicesError && categoriesError) {
-    return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="container mx-auto px-4 py-8">
-          <Alert variant="destructive" className="my-4">
-            <AlertDescription>
-              Unable to load services and categories. Please check your server connection and try again.
-              <br />
-              <small>Error details: {(servicesError as Error).message}</small>
-            </AlertDescription>
-          </Alert>
         </div>
       </div>
     );
@@ -251,26 +186,12 @@ export default function ServicesPage() {
           </div>
         </div>
 
-        {/* Error Messages */}
-        {servicesError && (
-          <Alert variant="destructive" className="my-4">
-            <AlertDescription>
-              Error loading services: {(servicesError as Error).message}
-              <br />
-              <small>Please check that your API server is running and accessible.</small>
-            </AlertDescription>
-          </Alert>
-        )}
-        
-        {categoriesError && (
-          <Alert variant="destructive" className="my-4">
-            <AlertDescription>
-              Error loading categories: {(categoriesError as Error).message}
-            </AlertDescription>
-          </Alert>
-        )}
-
         {/* Services Grid */}
+        {servicesError && (
+            <Alert variant="destructive" className="my-4">
+                <AlertDescription>Error loading services: {(servicesError as Error).message}</AlertDescription>
+            </Alert>
+        )}
         {(!servicesLoading && !servicesError && displayedServices.length === 0) ? (
           <div className="text-center py-12">
             <Search className="h-16 w-16 mx-auto text-gray-400 mb-4" />
@@ -290,29 +211,21 @@ export default function ServicesPage() {
                 <Card key={service.id} className="hover:shadow-lg transition-shadow flex flex-col">
                   <CardHeader>
                     {service.images && service.images.length > 0 && (
-                      <img 
-                        src={service.images[0]} 
-                        alt={service.name} 
-                        className="w-full h-40 object-cover rounded-t-md mb-2"
-                        onError={(e) => {
-                          // Hide broken images
-                          e.currentTarget.style.display = 'none';
-                        }}
-                      />
+                      <img src={service.images[0]} alt={service.name} className="w-full h-40 object-cover rounded-t-md mb-2"/>
                     )}
                     <div className="flex justify-between items-start mb-1">
                       <Badge variant="secondary" className="text-xs">
                         {categoryName}
                       </Badge>
                       <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                        <DollarSign className="h-4 w-4 mr-1" />
-                        {service.basePrice} tokens
+                        <DollarSign className="h-4 w-4 mr-1 text-token-gold" />
+                        {service.basePrice} tokens {service.serviceType === 'on_demand' ? '/ task' : service.priceUnit || '/hr'}
                       </div>
                     </div>
                     <CardTitle className="text-lg">{service.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="flex-grow">
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-3">
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 line-clamp-3 h-16">
                       {service.description}
                     </p>
                     <div className="space-y-1 text-xs text-gray-500">
@@ -322,26 +235,26 @@ export default function ServicesPage() {
                           {service.location.city}{service.location.state ? `, ${service.location.state}` : ''}
                         </div>
                       )}
-                      {service.isActive ? (
+                       {service.isActive ? (
                         <div className="flex items-center text-green-600">
                           <Clock className="h-3 w-3 mr-1.5" />
                           Available
                         </div>
                       ) : (
-                        <div className="flex items-center text-red-500">
-                          <Clock className="h-3 w-3 mr-1.5" />
-                          Unavailable
+                         <div className="flex items-center text-red-500">
+                           <Clock className="h-3 w-3 mr-1.5" />
+                           Unavailable
                         </div>
                       )}
-                      <div className="flex items-center">
-                        <Star className="h-3 w-3 mr-1.5 text-yellow-400" />
-                        {service.averageRating?.toFixed(1) || 'New'} ({service.reviewCount || 0} reviews)
-                      </div>
+                       <div className="flex items-center">
+                          <Star className="h-3 w-3 mr-1.5 text-yellow-400" />
+                          {service.averageRating?.toFixed(1) || 'New'} ({service.reviewCount || 0} reviews)
+                       </div>
                     </div>
                   </CardContent>
                   <CardFooter>
                     <Link href={`/services/${service.id}`} className="w-full">
-                      <Button className="w-full">
+                      <Button className="w-full bg-primary-blue hover:bg-primary-blue-dark text-white">
                         View Details & Book
                       </Button>
                     </Link>
@@ -352,10 +265,19 @@ export default function ServicesPage() {
           </div>
         )}
 
+        {/* Add Pagination controls here if not using infinite scroll */}
+        {/* Example:
+          {serviceData?.nextCursor && (
+            <Button onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+              {isFetchingNextPage ? 'Loading more...' : 'Load More'}
+            </Button>
+          )}
+        */}
+
         {/* Results Summary */}
         {displayedServices.length > 0 && (
           <div className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400">
-            Showing {displayedServices.length} services
+            Showing {displayedServices.length} services {/* Update this if using pagination to show total */}
           </div>
         )}
       </div>

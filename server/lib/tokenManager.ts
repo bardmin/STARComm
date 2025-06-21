@@ -1,5 +1,5 @@
-import * as admin from 'firebase-admin'; // Import the entire admin module
-// import { admin } from '../firebase'; // Assuming admin is exported from firebase.ts
+import { firestore } from 'firebase-admin'; // For types like firestore.Firestore, firestore.FieldValue
+import { admin } from '../firebase'; // Assuming admin is exported from firebase.ts
 
 // Define specific transaction types based on your Firestore schema for 'tokenTransactions'
 // This should align with the `transactionType` field in your Firestore schema.
@@ -41,7 +41,7 @@ export interface TransactionDetails {
  * @throws Error if wallet not found, insufficient balance, or Firestore transaction fails.
  */
 export async function recordTransactionAndUpdateWallet(
-  db: admin.firestore.Firestore, // Use admin.firestore.Firestore for the type
+  db: firestore.Firestore, // Pass Firestore instance for testability, or use admin.firestore() directly
   details: TransactionDetails
 ): Promise<{ transactionId: string }> {
   const {
@@ -106,8 +106,8 @@ export async function recordTransactionAndUpdateWallet(
             escrowImpact: escrowChange,
             initiator: initiatorId || userId,
         },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(), // Use admin.firestore.FieldValue
-        processedAt: admin.firestore.FieldValue.serverTimestamp(), // Or specific processing time
+        createdAt: firestore.FieldValue.serverTimestamp(), // Firestore server timestamp
+        processedAt: firestore.FieldValue.serverTimestamp(), // Or specific processing time
       };
       t.set(newTransactionRef, transactionLog);
 
@@ -115,8 +115,8 @@ export async function recordTransactionAndUpdateWallet(
       const walletUpdateData: { [key: string]: any } = { // Use any for flexibility with FieldValue
         balance: newBalance,
         escrowBalance: newEscrowBalance,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        lastTransactionAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        lastTransactionAt: firestore.FieldValue.serverTimestamp(),
       };
 
       // Update cumulative fields based on the nature of the transaction amount (not escrowChange)

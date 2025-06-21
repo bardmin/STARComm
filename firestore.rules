@@ -301,5 +301,58 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if false;
     }
+
+    // Helper function to check if the requesting user is a participant of a given chat
+    function isChatParticipant(chatId) {
+      return request.auth != null &&
+             get(/databases/$(database)/documents/chats/$(chatId)).data.participantUids.hasAny([request.auth.uid]);
+    }
+
+    // Rules for the 'chats' collection
+    match /chats/{chatId} {
+      // Allow a user to read a chat document if they are a participant.
+      // Listing chats will be filtered on the client using a query like:
+      // db.collection('chats').where('participantUids', 'array-contains', request.auth.uid)
+      // This read rule then secures access to the individual documents returned by such a query.
+      allow read: if isChatParticipant(chatId);
+
+      // Clients do not directly create chat documents.
+      // This is handled by the 'sendMessage' Cloud Function.
+      allow create: if false;
+
+      // Clients do not directly update chat documents (e.g., lastMessage, updatedAt).
+      // This is handled by the 'sendMessage' Cloud Function.
+      allow update: if false;
+
+      // Clients do not directly delete chat documents.
+      allow delete: if false;
+
+      // Rules for the 'messages' subcollection within each chat
+      match /messages/{messageId} {
+        // Allow reading messages if the user is a participant of the parent chat.
+        allow read: if isChatParticipant(chatId); // 'list' is implicitly covered by 'read' here for subcollections with this rule
+
+        // Clients do not directly create message documents.
+        // This is handled by the 'sendMessage' Cloud Function.
+        allow create: if false;
+
+        // Clients do not directly update message documents (e.g., readBy array).
+        // This is handled by the 'markMessagesAsRead' Cloud Function.
+        // If direct client updates to 'readBy' were needed, a more complex rule would be here, like:
+        // allow update: if isChatParticipant(chatId) &&
+        //                 request.resource.data.keys().hasOnly(['readBy']) &&
+        //                 request.resource.data.readBy.hasAll(resource.data.readBy) &&
+        //                 request.resource.data.readBy.hasAny([request.auth.uid]) &&
+        //                 request.resource.data.senderId == resource.data.senderId && // Ensure other fields are immutable
+        //                 request.resource.data.text == resource.data.text &&
+        //                 request.resource.data.imageUrl == resource.data.imageUrl &&
+        //                 request.resource.data.timestamp == resource.data.timestamp;
+        allow update: if false;
+
+
+        // Clients do not directly delete messages.
+        allow delete: if false;
+      }
+    }
   }
 }

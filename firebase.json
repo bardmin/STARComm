@@ -2,6 +2,10 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs18"
   }
   // Future configurations for hosting, functions, etc., can be added here.
   // Example for hosting (if client is deployed with Firebase Hosting):

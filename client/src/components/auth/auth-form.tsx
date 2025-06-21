@@ -5,10 +5,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Loader2 } from "lucide-react";
-import { authManager, establishServerSession } from "@/lib/auth"; // Import establishServerSession
-import { apiRequest } from "@/lib/queryClient"; // This might be replaced by establishServerSession for login
-import { auth as firebaseClientAuth } from "@/firebase"; // Import Firebase client auth instance
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { authManager } from "@/lib/auth"; // establishServerSession will be removed from here
+// import { apiRequest } from "@/lib/queryClient"; // No longer used for register/login direct calls
+import { auth as firebaseClientAuth } from "@/firebase";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile as updateFirebaseProfile } from "firebase/auth";
+import { getFunctions, httpsCallable, HttpsCallableError } from 'firebase/functions';
 
 interface AuthFormProps {
   mode: "login" | "register";
@@ -34,12 +35,11 @@ export default function AuthForm({ mode, onSuccess }: AuthFormProps) {
 
     if (mode === 'login') {
       try {
-        const userCredential = await signInWithEmailAndPassword(firebaseClientAuth, formData.email, formData.password);
-        const idToken = await userCredential.user.getIdToken();
-
-        // Call establishServerSession which handles backend call and authManager.setAuth
-        await establishServerSession(idToken);
-        onSuccess?.();
+        // Firebase client SDK handles login
+        await signInWithEmailAndPassword(firebaseClientAuth, formData.email, formData.password);
+        // onAuthStateChanged in App.tsx will handle setting authManager state and navigation
+        // No custom JWT / sessionLogin needed here anymore.
+        onSuccess?.(); // This should typically redirect to dashboard or home
       } catch (firebaseError: any) {
         console.error("Firebase login error:", firebaseError);
         if (firebaseError.code === 'auth/user-not-found' || firebaseError.code === 'auth/wrong-password' || firebaseError.code === 'auth/invalid-credential') {
@@ -50,26 +50,48 @@ export default function AuthForm({ mode, onSuccess }: AuthFormProps) {
       } finally {
         setLoading(false);
       }
-    } else { // Register mode (keeps existing logic for now, but server endpoint is refactored)
+    } else { // Register mode
       try {
-        const endpoint = "/api/auth/register"; // Register still goes to our backend
-        const payload = formData;
+        const userCredential = await createUserWithEmailAndPassword(firebaseClientAuth, formData.email, formData.password);
 
-        const response = await apiRequest("POST", endpoint, payload); // Using existing apiRequest
+        // Set display name in Firebase Auth
+        await updateFirebaseProfile(userCredential.user, {
+          displayName: `${formData.firstName} ${formData.lastName}`
+        });
+        console.info("Firebase Auth user created and display name set client-side."); // Changed to console.info
 
-        // The response from POST /api/auth/register does not include a token anymore.
-        // It includes { message, userId, email, role }.
-        // After successful registration, user should be redirected to login.
-        // For now, we can show a success message and let onSuccess handle redirection to login.
-        // authManager.setAuth(data.user, data.token); // This line is removed as no token is returned
-        console.log("Registration successful via server, user data:", await response.json());
-        // onSuccess should ideally redirect to login page or show a "Please login" message.
-        onSuccess?.(); // This might need adjustment in the parent component using AuthForm
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "An error occurred during registration");
+        // Call the new callable function to set initial role, phone, etc. in Firestore
+        const functionsInstance = getFunctions();
+        const setUserInitialDataCallable = httpsCallable(functionsInstance, 'setUserInitialProfileData');
+        await setUserInitialDataCallable({
+          role: formData.role,
+          phoneNumber: formData.phoneNumber || null, // Send null if empty
+          firstName: formData.firstName,
+          lastName: formData.lastName
+        });
+        console.info("setUserInitialProfileData callable function call succeeded client-side."); // Changed to console.info
+
+        // onAuthStateChanged in App.tsx will pick up the new user.
+        // Registration success handling (e.g., redirect to login or show message) is done by onSuccess prop
+        onSuccess?.();
+
+      } catch (error: any) {
+        console.error("Registration error:", error);
+        if (error instanceof HttpsCallableError) {
+          setError(error.message || "Failed to set initial profile data.");
+        } else if (error.code === 'auth/email-already-in-use') {
+          setError("This email address is already in use.");
+        } else {
+          setError(error.message || "An error occurred during registration.");
+        }
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setLoading(false);
     }
   };
 

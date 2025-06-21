@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.log
+
+# Firebase cache files
+.firebase/
+
+# Emulator local data
+*.snap
+*.log
+firestore.rules.spec.js
+firebase-debug.log
+database-debug.log
+hosting-debug.log
+ui-debug.log
+
+# Other specific files to ignore
+secrets/
+serviceAccountKey.json
+*.env
+.env.*
+!.env.example

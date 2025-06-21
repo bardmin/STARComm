@@ -5,9 +5,9 @@ import rateLimit from 'express-rate-limit'; // For loginLimiter
 import { storage } from "./storage"; // This will be largely unused for user creation now
 // import bcrypt from "bcrypt"; // Bcrypt no longer needed for Firebase auth user creation
 import jwt from "jsonwebtoken"; // Still used for custom token if any, but not for Firebase primary auth
-import { admin } from "./firebase"; // Import Firebase Admin SDK instance
+import { admin } from "../firebase"; // Import Firebase Admin SDK instance
 import { FieldValue } from 'firebase-admin/firestore'; // For serverTimestamp
-import { recordTransactionAndUpdateWallet, TransactionType } from './lib/tokenManager'; // Import token manager
+import { recordTransactionAndUpdateWallet, TransactionType } from '../lib/tokenManager'; // Import token manager
 
 import { insertUserSchema, insertServiceSchema, insertBookingSchema, insertStarProjectSchema, insertStarCauseSchema, insertReviewSchema, insertMessageSchema } from "@shared/schema";
 import { trackServerEvent, getClientIdFromRequest } from "./analytics";
@@ -526,7 +526,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // The old PUT /api/users/:id for admin/self can be deprecated or refocused for admin only.
   // For now, it remains but might conflict or be confusing.
   // Ideally, admin actions have separate, clearly permissioned routes e.g. /api/admin/users/:userId
- /* app.put("/api/users/:id", authenticateToken, async (req: Request, res: Response) => { // Added types
+  /*
+  app.put("/api/users/:id", authenticateToken, async (req: Request, res: Response) => { // Added types
     // This route primarily dealt with PostgreSQL IDs and might need full removal or refactor for admin actions on Firestore users.
     // For now, if an admin tries to use this with a Firebase UID, it might fail at parseInt or PG lookups.
     // If it's meant for admins to update Firestore users:
@@ -544,7 +545,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     // For this subtask, we're focusing on /api/users/me. This old route is now problematic.
     // I will comment it out to avoid conflicts and indicate it needs a separate admin-focused refactor.
-    
+
     try {
       const userId = parseInt(req.params.id); // This will fail for Firebase UIDs (strings)
       const updates = req.body;
@@ -555,7 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const originalUser = await storage.getUser(userId); // PG lookup
+      // const originalUser = await storage.getUser(userId); // PG lookup
       // ... rest of old PG logic ...
       res.status(501).json({ message: "This endpoint /api/users/:id is pending refactor for Firestore admin actions." });
     } catch (error) {
@@ -614,7 +615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       Sentry.captureException(error);
       res.status(500).json({ message: "Failed to fetch services." });
     }
-  });*/
+  });
 
   // GET /api/services/:serviceId (Get Single Service) - Refactored for Firestore
   app.get("/api/services/:serviceId", async (req: Request, res: Response) => {
@@ -965,7 +966,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
-// GET /api/bookings - List bookings for the authenticated user (as resident or provider)
+  // GET /api/bookings - List bookings for the authenticated user (as resident or provider)
   app.get("/api/bookings", authenticateToken, async (req: Request, res: Response) => {
     try {
       const userId = req.user.userId;
@@ -1188,11 +1189,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
+
   // Wallet routes
   app.get("/api/wallet", authenticateToken, async (req, res) => {
-    try {
-      // Add your wallet logic here
-      res.json({ message: "Wallet endpoint" });
     } catch (error) {
       res.status(500).json({ message: "Internal server error" });
     }
